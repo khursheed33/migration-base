@@ -9,6 +9,7 @@ from pydantic import ValidationError
 import json
 
 from app.config.settings import get_settings
+from app.config.dependencies import dependency_initializer
 from app.schemas import (
     ProjectCreate,
     ProjectResponse,
@@ -16,7 +17,6 @@ from app.schemas import (
     ErrorResponse,
 )
 from app.agents.tasks import process_upload
-from app.databases import neo4j_manager
 
 settings = get_settings()
 router = APIRouter()
@@ -154,6 +154,18 @@ async def get_project(project_id: str):
         Project details
     """
     try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+            
         # Retrieve project from database
         project = neo4j_manager.find_node("Project", "project_id", project_id)
         

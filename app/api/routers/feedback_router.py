@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import JSONResponse
 
 from app.schemas import FeedbackCreate, FeedbackResponse, SuccessResponse, ErrorResponse
-from app.databases import neo4j_manager
+from app.config.dependencies import dependency_initializer
 
 router = APIRouter()
 
@@ -33,6 +33,18 @@ async def create_feedback(
         Success response with created feedback
     """
     try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+            
         # Check if project exists
         project = neo4j_manager.find_node("Project", "project_id", project_id)
         if not project:
@@ -112,6 +124,18 @@ async def get_project_feedback(project_id: str):
         Success response with list of feedback
     """
     try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+            
         # Check if project exists
         project = neo4j_manager.find_node("Project", "project_id", project_id)
         if not project:

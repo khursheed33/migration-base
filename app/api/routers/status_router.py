@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.schemas import StatusResponse, ErrorResponse
-from app.databases import neo4j_manager
+from app.config.dependencies import dependency_initializer
 
 router = APIRouter()
 
@@ -27,6 +27,18 @@ async def get_project_status(project_id: str):
         Project status information
     """
     try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+            
         # Retrieve project from database
         query = """
         MATCH (p:Project {project_id: $project_id})

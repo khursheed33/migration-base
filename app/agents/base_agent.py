@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from app.databases import neo4j_manager
+from app.config.dependencies import dependency_initializer
 from app.config.settings import get_settings
 
 settings = get_settings()
@@ -25,7 +25,12 @@ class BaseAgent(abc.ABC):
             project_id: The project ID
         """
         self.project_id = project_id
-        self.db = neo4j_manager
+        # Get the Neo4j manager from the dependency initializer
+        self.db = dependency_initializer.get_service("neo4j")
+        if self.db is None:
+            logger.error(f"Neo4j service not available for agent {self.__class__.__name__}")
+            raise RuntimeError("Neo4j service not available")
+            
         self.logger = logger
     
     @abc.abstractmethod

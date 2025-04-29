@@ -1,20 +1,62 @@
 fastapi==0.104.1
+# A modern, fast (high-performance) web framework for building APIs with Python 3.7+ based on standard Python type hints.
+
 uvicorn==0.23.2
+# A lightning-fast ASGI server used to serve FastAPI applications.
+
 neo4j==5.14.1
+# Official Neo4j Python driver to connect and interact with Neo4j graph databases.
+
 python-dotenv==1.0.0
+# Loads environment variables from a .env file into os.environ.
+
 langchain==0.0.335
+# Framework to build applications powered by language models, integrating tools, memory, chains, and agents.
+
 langchain-core==0.1.17
+# Core package of LangChain providing foundational types and utilities (used internally by langchain and langgraph).
+
 langgraph==0.0.21
+# A library for building stateful, multi-step LLM applications using a graph-based architecture.
+
 openai==1.3.7
+# Python client for accessing OpenAI's GPT models and other APIs.
+
 celery==5.3.4
+# Asynchronous task queue/job queue based on distributed message passing (commonly used with FastAPI for background jobs).
+
 redis==5.0.1
+# Python client for Redis, an in-memory data structure store used as a database, cache, and message broker.
+
 python-multipart==0.0.6
+# Handles `multipart/form-data` used for file uploads in FastAPI.
+
 pyjwt==2.8.0
+# JSON Web Token implementation in Python for creating and verifying JWTs used in authentication.
+
 pytest==7.4.3
+# Framework that makes building simple and scalable test cases easy in Python.
+
 tree-sitter==0.20.1
+# Parser generator tool and an incremental parsing library for efficiently parsing source code.
+
 pandas==2.1.3
+# Powerful data structures and data analysis tools for working with structured data.
+
 websockets==12.0
+# A library for building WebSocket servers and clients in Python.
+
 zipfile36==0.1.3
+# Backport of the `zipfile` module from Python 3.6 (used for working with ZIP archives).
+
 python-jose==3.3.0
+# A JavaScript Object Signing and Encryption (JOSE) implementation in Python used for JWT and JWE/JWS handling.
+
 passlib==1.7.4
-bcrypt==4.0.1 
+# Comprehensive password hashing framework supporting over 30 schemes.
+
+bcrypt==4.0.1
+# Library for hashing and checking passwords using the bcrypt algorithm (commonly used with passlib).
+
+pydantic-settings==2.9.1
+# Settings management for Pydantic-based applications, allowing easy loading of environment variables into Pydantic models.

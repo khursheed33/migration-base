@@ -32,7 +32,7 @@ class Neo4jManager:
         """
         if cls._instance is None:
             cls._instance = super(Neo4jManager, cls).__new__(cls)
-            cls._instance._init_driver()
+            # Don't initialize driver here, let the dependency initializer handle it
         return cls._instance
     
     def _init_driver(self) -> None:
@@ -207,5 +207,5 @@ class Neo4jManager:
         result = self.run_query(query, {"value": property_value})
         return result[0]['n'] if result else None
 
-# Create a singleton instance
+# Create a singleton instance but don't initialize yet
 neo4j_manager = Neo4jManager() 

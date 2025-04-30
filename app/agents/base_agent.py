@@ -118,54 +118,61 @@ class BaseAgent(abc.ABC):
         except Exception as e:
             self.logger.error(f"Error logging error report: {str(e)}")
     
-    def create_report(self, report_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def create_report(
+        self,
+        report_type: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
-        Create a report for the project.
+        Create a report node in Neo4j.
         
         Args:
-            report_type: The report type (e.g., migration, audit)
-            message: The report message
+            report_type: Type of report
+            message: Report message
             details: Additional report details
             
         Returns:
-            The created report
+            Created report node
         """
-        self.logger.info(f"Creating {report_type} report for project {self.project_id}")
-        
         try:
-            # Convert all non-primitive values in details to strings
+            # Ensure details are primitive types
             serialized_details = {}
             if details:
                 for key, value in details.items():
-                    if isinstance(value, (str, int, float, bool)):
-                        serialized_details[key] = value
-                    else:
+                    # Convert non-primitive types to strings
+                    if isinstance(value, (dict, list)):
                         serialized_details[key] = str(value)
+                    else:
+                        serialized_details[key] = value
 
-            # Create a report
-            query = """
-            MATCH (p:Project {project_id: $project_id})
-            CREATE (r:Report {
-                report_id: $report_id,
-                project_id: $project_id,
-                type: $type,
-                message: $message,
-                details: $details,
-                created_at: $created_at
-            })
-            CREATE (p)-[:REPORTED_IN]->(r)
-            RETURN r
-            """
-            parameters = {
-                "report_id": str(uuid.uuid4()),
+            report_id = str(uuid.uuid4())
+            report_properties = {
+                "report_id": report_id,
                 "project_id": self.project_id,
                 "type": report_type,
                 "message": message,
                 "details": serialized_details,
                 "created_at": datetime.utcnow().isoformat()
             }
-            result = self.db.run_query(query, parameters)
-            return result[0]['r'] if result else {}
+            
+            report_node = self.db.create_node("Report", report_properties)
+            
+            # Create relationship from Project to Report
+            self.db.create_relationship(
+                from_label="Project",
+                from_property="project_id",
+                from_value=self.project_id,
+                to_label="Report",
+                to_property="report_id",
+                to_value=report_id,
+                relationship_type="HAS_REPORT"
+            )
+            
+            self.logger.info(f"Created {report_type} report for project {self.project_id}")
+            return report_node
+            
         except Exception as e:
-            self.logger.error(f"Error creating report: {str(e)}")
-            return {}
+            error_message = f"Error creating report: {str(e)}"
+            self.logger.error(error_message)
+            raise

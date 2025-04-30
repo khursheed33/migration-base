@@ -112,17 +112,33 @@ class UploadAgent(BaseAgent):
                         self.log_error(error_message)
                         return {"success": False, "error": error_message}
                 
+                # Get total size for validation
+                total_size = sum(zip_info.file_size for zip_info in zip_ref.infolist())
+                max_size_mb = settings.MAX_UPLOAD_SIZE_MB
+                if max_size_mb and total_size > max_size_mb * 1024 * 1024:
+                    error_message = f"ZIP file too large. Maximum allowed size: {max_size_mb}MB"
+                    self.log_error(error_message)
+                    return {"success": False, "error": error_message}
+                
                 # Extract files
                 zip_ref.extractall(extract_dir)
                 
-                # Get file count
+                # Gather file stats
                 file_count = len(zip_ref.infolist())
+                file_types = {}
+                for zip_info in zip_ref.infolist():
+                    if not zip_info.is_dir():
+                        ext = os.path.splitext(zip_info.filename)[1].lower()
+                        file_types[ext] = file_types.get(ext, 0) + 1
+                
                 self.logger.info(f"Extracted {file_count} files to {extract_dir}")
                 
                 return {
                     "success": True,
                     "extract_dir": extract_dir,
-                    "file_count": file_count
+                    "file_count": file_count,
+                    "file_types": file_types,
+                    "total_size": total_size
                 }
                 
         except zipfile.BadZipFile:
@@ -155,6 +171,9 @@ class UploadAgent(BaseAgent):
         migrated_dir = os.path.join(storage_dir, f"migrated_{self.project_id}")
         os.makedirs(migrated_dir, exist_ok=True)
         
+        # Get ZIP file metadata (from extraction step)
+        file_stats = self._get_file_stats(temp_dir)
+        
         # Prepare project properties
         project_properties = {
             "project_id": self.project_id,
@@ -170,6 +189,10 @@ class UploadAgent(BaseAgent):
             "target_framework": project_data.get("target_framework"),
             "description": project_data.get("description"),
             "custom_mappings": json.dumps(project_data.get("custom_mappings", {})),  # Serialize to JSON string
+            "file_count": file_stats["file_count"],
+            "folder_count": file_stats["folder_count"],
+            "largest_file_size": file_stats["largest_file_size"],
+            "file_types": json.dumps(file_stats["file_types"]),
             "created_at": now,
             "updated_at": now
         }
@@ -179,3 +202,46 @@ class UploadAgent(BaseAgent):
         project = self.db.create_node("Project", project_properties)
         
         return project
+        
+    def _get_file_stats(self, directory: str) -> Dict[str, Any]:
+        """
+        Get statistics about files in the extracted project.
+        
+        Args:
+            directory: Path to the directory to analyze
+            
+        Returns:
+            Dictionary containing file statistics
+        """
+        file_count = 0
+        folder_count = 0
+        largest_file_size = 0
+        file_types = {}
+        
+        for root, dirs, files in os.walk(directory):
+            folder_count += len(dirs)
+            
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                # Skip hidden files
+                if file.startswith('.'):
+                    continue
+                
+                # Get file extension and update counts
+                ext = os.path.splitext(file)[1].lower()
+                file_types[ext] = file_types.get(ext, 0) + 1
+                
+                # Update counts
+                file_count += 1
+                
+                # Check file size
+                file_size = os.path.getsize(file_path)
+                largest_file_size = max(largest_file_size, file_size)
+        
+        return {
+            "file_count": file_count,
+            "folder_count": folder_count,
+            "largest_file_size": largest_file_size,
+            "file_types": file_types
+        }

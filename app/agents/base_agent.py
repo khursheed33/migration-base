@@ -55,29 +55,32 @@ class BaseAgent(abc.ABC):
         """
         self.logger.info(f"Updating project {self.project_id} status to {status}, progress: {progress}%")
         
-        # Get the current project
-        project = self.db.find_node("Project", "project_id", self.project_id)
-        if not project:
-            self.logger.error(f"Project {self.project_id} not found")
-            return
-        
-        # Update the project status
-        query = """
-        MATCH (p:Project {project_id: $project_id})
-        SET p.status = $status, 
-            p.progress = $progress, 
-            p.current_step = $current_step,
-            p.updated_at = $updated_at
-        RETURN p
-        """
-        parameters = {
-            "project_id": self.project_id,
-            "status": status,
-            "progress": progress,
-            "current_step": current_step,
-            "updated_at": datetime.utcnow().isoformat()
-        }
-        self.db.run_query(query, parameters)
+        try:
+            # Get the current project
+            project = self.db.find_node("Project", "project_id", self.project_id)
+            if not project:
+                self.logger.error(f"Project {self.project_id} not found")
+                return
+            
+            # Update the project status
+            query = """
+            MATCH (p:Project {project_id: $project_id})
+            SET p.status = $status, 
+                p.progress = $progress, 
+                p.current_step = $current_step,
+                p.updated_at = $updated_at
+            RETURN p
+            """
+            parameters = {
+                "project_id": self.project_id,
+                "status": status,
+                "progress": progress,
+                "current_step": current_step,
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            self.db.run_query(query, parameters)
+        except Exception as e:
+            self.logger.error(f"Error updating project status: {str(e)}")
     
     def log_error(self, error_message: str, error_details: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -89,28 +92,31 @@ class BaseAgent(abc.ABC):
         """
         self.logger.error(f"Project {self.project_id} error: {error_message}")
         
-        # Create an error report
-        query = """
-        MATCH (p:Project {project_id: $project_id})
-        CREATE (r:Report {
-            report_id: $report_id,
-            project_id: $project_id,
-            type: 'error',
-            message: $message,
-            details: $details,
-            created_at: $created_at
-        })
-        CREATE (p)-[:REPORTED_IN]->(r)
-        RETURN r
-        """
-        parameters = {
-            "report_id": f"report_{uuid.uuid4()}",
-            "project_id": self.project_id,
-            "message": error_message,
-            "details": error_details or {},
-            "created_at": datetime.utcnow().isoformat()
-        }
-        self.db.run_query(query, parameters)
+        try:
+            # Create an error report
+            query = """
+            MATCH (p:Project {project_id: $project_id})
+            CREATE (r:Report {
+                report_id: $report_id,
+                project_id: $project_id,
+                type: 'error',
+                message: $message,
+                details: $details,
+                created_at: $created_at
+            })
+            CREATE (p)-[:REPORTED_IN]->(r)
+            RETURN r
+            """
+            parameters = {
+                "report_id": str(uuid.uuid4()),
+                "project_id": self.project_id,
+                "message": error_message,
+                "details": error_details or {},
+                "created_at": datetime.utcnow().isoformat()
+            }
+            self.db.run_query(query, parameters)
+        except Exception as e:
+            self.logger.error(f"Error logging error report: {str(e)}")
     
     def create_report(self, report_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -126,27 +132,31 @@ class BaseAgent(abc.ABC):
         """
         self.logger.info(f"Creating {report_type} report for project {self.project_id}")
         
-        # Create a report
-        query = """
-        MATCH (p:Project {project_id: $project_id})
-        CREATE (r:Report {
-            report_id: $report_id,
-            project_id: $project_id,
-            type: $type,
-            message: $message,
-            details: $details,
-            created_at: $created_at
-        })
-        CREATE (p)-[:REPORTED_IN]->(r)
-        RETURN r
-        """
-        parameters = {
-            "report_id": f"report_{uuid.uuid4()}",
-            "project_id": self.project_id,
-            "type": report_type,
-            "message": message,
-            "details": details or {},
-            "created_at": datetime.utcnow().isoformat()
-        }
-        result = self.db.run_query(query, parameters)
-        return result[0]['r'] if result else {} 
+        try:
+            # Create a report
+            query = """
+            MATCH (p:Project {project_id: $project_id})
+            CREATE (r:Report {
+                report_id: $report_id,
+                project_id: $project_id,
+                type: $type,
+                message: $message,
+                details: $details,
+                created_at: $created_at
+            })
+            CREATE (p)-[:REPORTED_IN]->(r)
+            RETURN r
+            """
+            parameters = {
+                "report_id": str(uuid.uuid4()),
+                "project_id": self.project_id,
+                "type": report_type,
+                "message": message,
+                "details": details or {},
+                "created_at": datetime.utcnow().isoformat()
+            }
+            result = self.db.run_query(query, parameters)
+            return result[0]['r'] if result else {}
+        except Exception as e:
+            self.logger.error(f"Error creating report: {str(e)}")
+            return {} 

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Storage settings
     STORAGE_DIR: str = Field(default="./storage", description="Storage directory for project files")
     TEMP_DIR: str = Field(default="./tmp", description="Temporary directory for extracted files")
+    MAX_UPLOAD_SIZE_MB: int = Field(default=500, description="Maximum allowed upload size in MB")
     
     # S3 settings (optional)
     USE_S3: bool = Field(default=False, description="Whether to use S3 for storage")

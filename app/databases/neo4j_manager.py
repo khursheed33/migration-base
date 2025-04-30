@@ -206,6 +206,91 @@ class Neo4jManager:
         """
         result = self.run_query(query, {"value": property_value})
         return result[0]['n'] if result else None
+        
+    def create_nodes_batch(
+        self,
+        label: str,
+        properties_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Create multiple nodes with the same label in a single transaction.
+        
+        Args:
+            label: Node label
+            properties_list: List of property dictionaries for each node
+            
+        Returns:
+            List of dictionaries representing the created nodes
+        """
+        def _create_nodes_tx(tx, label, props_list):
+            query = f"""
+            UNWIND $props_list AS props
+            CREATE (n:{label} props)
+            RETURN n
+            """
+            result = tx.run(query, props_list=props_list)
+            return [record["n"] for record in result]
+        
+        return self.run_transaction(_create_nodes_tx, label, properties_list)
+        
+    def create_relationships_batch(
+        self,
+        relationships: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Create multiple relationships in a single transaction.
+        
+        Args:
+            relationships: List of dictionaries containing relationship info:
+                {
+                    'from_label': str,
+                    'from_property': str,
+                    'from_value': Any,
+                    'to_label': str,
+                    'to_property': str,
+                    'to_value': Any,
+                    'relationship_type': str,
+                    'properties': Optional[Dict[str, Any]]
+                }
+                
+        Returns:
+            List of dictionaries representing the created relationships
+        """
+        def _create_relationships_tx(tx, rels):
+            query = """
+            UNWIND $rels AS rel
+            MATCH (a), (b)
+            WHERE a[rel.from_property] = rel.from_value 
+            AND b[rel.to_property] = rel.to_value
+            AND labels(a)[0] = rel.from_label 
+            AND labels(b)[0] = rel.to_label
+            CREATE (a)-[r:PLACEHOLDER_REL]->(b)
+            SET r = rel.properties
+            RETURN type(r) as rel_type, id(r) as rel_id
+            """
+            # Neo4j doesn't allow parameterizing relationship types
+            # So we'll do this in multiple steps
+            results = []
+            for rel in rels:
+                rel_type = rel['relationship_type']
+                custom_query = query.replace('PLACEHOLDER_REL', rel_type)
+                result = tx.run(
+                    custom_query,
+                    rels=[{
+                        'from_property': rel['from_property'],
+                        'from_value': rel['from_value'],
+                        'to_property': rel['to_property'],
+                        'to_value': rel['to_value'],
+                        'from_label': rel['from_label'],
+                        'to_label': rel['to_label'],
+                        'properties': rel.get('properties', {})
+                    }]
+                )
+                results.extend(list(result))
+            
+            return results
+        
+        return self.run_transaction(_create_relationships_tx, relationships)
 
 # Create a singleton instance but don't initialize yet
 neo4j_manager = Neo4jManager() 

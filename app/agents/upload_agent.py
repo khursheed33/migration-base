@@ -146,6 +146,7 @@ class UploadAgent(BaseAgent):
         Returns:
             Created Project node
         """
+        import json
         now = datetime.utcnow().isoformat()
         
         # Create migrated directory
@@ -168,7 +169,7 @@ class UploadAgent(BaseAgent):
             "source_framework": project_data.get("source_framework"),
             "target_framework": project_data.get("target_framework"),
             "description": project_data.get("description"),
-            "custom_mappings": project_data.get("custom_mappings", {}),
+            "custom_mappings": json.dumps(project_data.get("custom_mappings", {})),  # Serialize to JSON string
             "created_at": now,
             "updated_at": now
         }
@@ -177,4 +178,4 @@ class UploadAgent(BaseAgent):
         self.logger.info(f"Creating Project node for project {self.project_id}")
         project = self.db.create_node("Project", project_properties)
         
-        return project 
+        return project

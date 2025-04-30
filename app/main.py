@@ -48,12 +48,12 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(project_router.router, prefix="/projects", tags=["Projects"])
-app.include_router(status_router.router, prefix="/projects", tags=["Status"])
-app.include_router(metadata_router.router, prefix="/projects", tags=["Metadata"])
-app.include_router(graph_router.router, prefix="/projects", tags=["Graph"])
-app.include_router(download_router.router, prefix="/projects", tags=["Download"])
-app.include_router(feedback_router.router, prefix="/projects", tags=["Feedback"])
+app.include_router(project_router, prefix="/projects", tags=["Projects"])
+app.include_router(status_router, prefix="/projects", tags=["Status"])
+app.include_router(metadata_router, prefix="/projects", tags=["Metadata"])
+app.include_router(graph_router, prefix="/projects", tags=["Graph"])
+app.include_router(download_router, prefix="/projects", tags=["Download"])
+app.include_router(feedback_router, prefix="/projects", tags=["Feedback"])
 
 @app.get("/", tags=["Root"])
 async def root():

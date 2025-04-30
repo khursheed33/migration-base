@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.agents.base_agent import BaseAgent
 from app.agents.structure_analysis_agent import StructureAnalysisAgent
+from app.agents.content_analysis_agent import ContentAnalysisAgent
 from app.config.settings import get_settings
 
 settings = get_settings()
@@ -50,20 +51,17 @@ class AnalysisAgent(BaseAgent):
                 self.log_error(error_message)
                 return {"success": False, "error": error_message}
             
-            # Step 2: Content Analysis (currently a placeholder)
-            # content_agent = ContentAnalysisAgent(self.project_id)
-            # content_result = await content_agent.execute(structure_result.get("file_nodes", []))
+            # Step 2: Content Analysis
+            content_agent = ContentAnalysisAgent(self.project_id)
+            content_result = await content_agent.execute(structure_result.get("file_nodes", []))
             
-            # if not content_result.get("success", False):
-            #     error_message = f"Content analysis failed: {content_result.get('error', 'Unknown error')}"
-            #     self.log_error(error_message)
-            #     return {"success": False, "error": error_message}
+            if not content_result.get("success", False):
+                error_message = f"Content analysis failed: {content_result.get('error', 'Unknown error')}"
+                self.log_error(error_message)
+                return {"success": False, "error": error_message}
             
-            # Placeholder for content analysis result
-            content_result = {"success": True, "message": "Content analysis not implemented yet"}
-            
-            # Step 3: Classify components (currently a placeholder)
-            classification_result = self._classify_components(structure_result.get("file_nodes", []))
+            # Step 3: Classify components
+            classification_result = await self._classify_components(structure_result.get("file_nodes", []))
             
             # Update project status
             self.update_project_status(
@@ -78,7 +76,8 @@ class AnalysisAgent(BaseAgent):
                 message="Project analysis completed",
                 details={
                     "file_count": structure_result.get("file_count", 0),
-                    "components": classification_result.get("components", [])
+                    "metadata": content_result.get("metadata_counts", {}),
+                    "components": classification_result.get("components", {})
                 }
             )
             
@@ -95,11 +94,9 @@ class AnalysisAgent(BaseAgent):
             self.log_error(error_message)
             return {"success": False, "error": error_message}
     
-    def _classify_components(self, file_nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _classify_components(self, file_nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Placeholder method for classifying project components.
-        In the real implementation, this would analyze the files and classify them
-        into UI, logic, data, or config components.
+        Classify project components based on file types and content.
         
         Args:
             file_nodes: List of file nodes from structure analysis
@@ -107,9 +104,6 @@ class AnalysisAgent(BaseAgent):
         Returns:
             Dictionary with classification results
         """
-        # This is a simple placeholder implementation that classifies components
-        # based on file types and paths
-        
         components = {
             "ui": [],
             "logic": [],
@@ -122,21 +116,21 @@ class AnalysisAgent(BaseAgent):
             file_type = file_node.get("file_type", "unknown")
             
             # Simple classification rules
-            if file_type in ["html", "css", "scss", "sass", "react"]:
+            if file_type in ["html", "css", "scss", "sass", "react", "tsx", "jsx"]:
                 component_type = "ui"
             elif file_type in ["json", "yaml", "yml", "xml", "toml", "ini", "config"]:
                 component_type = "config"
-            elif file_type in ["sql", "csv"]:
+            elif file_type in ["sql", "csv", "db", "sqlite"]:
                 component_type = "data"
             else:
                 component_type = "logic"
             
             # Path-based refinements
-            if "/ui/" in relative_path or "\\ui\\" in relative_path:
+            if any(ui_dir in relative_path.lower() for ui_dir in ["/ui/", "\\ui\\", "/view", "\\view", "/template", "\\template"]):
                 component_type = "ui"
-            elif "/data/" in relative_path or "\\data\\" in relative_path:
+            elif any(data_dir in relative_path.lower() for data_dir in ["/data/", "\\data\\", "/model", "\\model", "/entity", "\\entity"]):
                 component_type = "data"
-            elif "/config/" in relative_path or "\\config\\" in relative_path:
+            elif any(config_dir in relative_path.lower() for config_dir in ["/config/", "\\config\\", "/setting", "\\setting"]):
                 component_type = "config"
             
             # Add to appropriate component list
@@ -148,7 +142,8 @@ class AnalysisAgent(BaseAgent):
                 "component_id": component_id,
                 "project_id": self.project_id,
                 "file_id": file_node.get("file_id"),
-                "type": component_type
+                "type": component_type,
+                "created_at": file_node.get("created_at")
             }
             
             component_node = self.db.create_node("Component", component_properties)
@@ -167,4 +162,4 @@ class AnalysisAgent(BaseAgent):
         return {
             "success": True,
             "components": components
-        } 
+        }

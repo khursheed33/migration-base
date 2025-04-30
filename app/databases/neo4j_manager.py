@@ -230,7 +230,7 @@ class Neo4jManager:
         def _create_nodes_tx(tx, props_list):
             query = f"""
             UNWIND $props_list AS props
-            CREATE (n:{label} props)
+            CREATE (n:{label}) SET n = props
             RETURN n
             """
             result = tx.run(query, props_list=props_list)
@@ -280,7 +280,8 @@ class Neo4jManager:
                 UNWIND $rels AS rel
                 MATCH (a:{{}}) WHERE a[rel.from_property] = rel.from_value
                 MATCH (b:{{}}) WHERE b[rel.to_property] = rel.to_value
-                CREATE (a)-[r:{rel_type} rel.properties]->(b)
+                CREATE (a)-[r:{rel_type}]->(b)
+                SET r = rel.properties
                 RETURN r
                 """
                 # Substitute the labels dynamically

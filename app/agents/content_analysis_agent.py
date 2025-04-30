@@ -36,6 +36,7 @@ class ContentAnalysisAgent(BaseAgent):
     def __init__(self, project_id: str):
         """Initialize the content analysis agent."""
         super().__init__(project_id)
+        # Initialize OpenAI client without proxies parameter
         self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.parser = self._initialize_parser()
         self._processed_files: Set[str] = set()

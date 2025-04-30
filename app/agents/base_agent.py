@@ -133,6 +133,15 @@ class BaseAgent(abc.ABC):
         self.logger.info(f"Creating {report_type} report for project {self.project_id}")
         
         try:
+            # Convert all non-primitive values in details to strings
+            serialized_details = {}
+            if details:
+                for key, value in details.items():
+                    if isinstance(value, (str, int, float, bool)):
+                        serialized_details[key] = value
+                    else:
+                        serialized_details[key] = str(value)
+
             # Create a report
             query = """
             MATCH (p:Project {project_id: $project_id})
@@ -152,11 +161,11 @@ class BaseAgent(abc.ABC):
                 "project_id": self.project_id,
                 "type": report_type,
                 "message": message,
-                "details": details or {},
+                "details": serialized_details,
                 "created_at": datetime.utcnow().isoformat()
             }
             result = self.db.run_query(query, parameters)
             return result[0]['r'] if result else {}
         except Exception as e:
             self.logger.error(f"Error creating report: {str(e)}")
-            return {} 
+            return {}

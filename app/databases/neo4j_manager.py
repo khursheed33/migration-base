@@ -28,6 +28,21 @@ def _serialize_node(node_data: Dict[str, Any]) -> Dict[str, Any]:
             result[key] = str(value)  # Convert any other types to string
     return result
 
+def _sanitize_relationship_type(rel_type: str) -> str:
+    """
+    Sanitize relationship type to be a valid Neo4j identifier.
+    - Replace hyphens with underscores
+    - If starts with a number, prefix with 'REL_'
+    - Convert to uppercase as per Neo4j conventions
+    """
+    # Replace hyphens with underscores
+    sanitized = rel_type.replace('-', '_')
+    # If starts with a number, prefix with 'REL_'
+    if sanitized[0].isdigit():
+        sanitized = f'REL_{sanitized}'
+    # Convert to uppercase as per Neo4j conventions
+    return sanitized.upper()
+
 class Neo4jManager:
     """
     Neo4j database manager using the Singleton pattern.
@@ -193,10 +208,12 @@ class Neo4jManager:
         Returns:
             Dictionary representing the created relationship
         """
+        sanitized_relationship_type = _sanitize_relationship_type(relationship_type)  # Sanitize the relationship type
+
         query = f"""
         MATCH (a:{from_label}), (b:{to_label})
         WHERE a.{from_property} = $from_value AND b.{to_property} = $to_value
-        CREATE (a)-[r:{relationship_type} $properties]->(b)
+        CREATE (a)-[r:{sanitized_relationship_type} $properties]->(b)
         RETURN r
         """
         result = self.run_query(
@@ -208,7 +225,7 @@ class Neo4jManager:
             }
         )
         return result[0]['r'] if result else {}
-    
+
     def create_nodes_batch(
         self,
         label: str,
@@ -269,39 +286,56 @@ class Neo4jManager:
         relationship_types = {}
         
         for rel in relationships:
-            rel_type = rel['relationship_type']
-            if rel_type not in relationship_types:
-                relationship_types[rel_type] = []
-            relationship_types[rel_type].append(rel)
+            # Use a generic relationship type and store the original as a property
+            original_type = rel['relationship_type']
+            sanitized_type = 'RELATED_TO'  # Using a generic type for all relationships
+            
+            # Prepare properties including the original relationship type
+            props = rel.get('properties', {}).copy()
+            props.update({
+                'uuid': original_type,  # Store the UUID
+                'display_name': original_type  # Store for display purposes
+            })
+            
+            # Update the relationship data with the new properties
+            rel_data = rel.copy()
+            rel_data['properties'] = props
+            
+            if sanitized_type not in relationship_types:
+                relationship_types[sanitized_type] = []
+            relationship_types[sanitized_type].append(rel_data)
         
         for rel_type, rels in relationship_types.items():
-            def _create_relationships_tx(tx, rel_data, rel_type):
-                query = f"""
-                UNWIND $rels AS rel
-                MATCH (a:{{}}) WHERE a[rel.from_property] = rel.from_value
-                MATCH (b:{{}}) WHERE b[rel.to_property] = rel.to_value
-                CREATE (a)-[r:{rel_type}]->(b)
-                SET r = rel.properties
-                RETURN r
-                """
-                # Substitute the labels dynamically
-                query = query.format(rel_data[0]['from_label'], rel_data[0]['to_label'])
-                
-                # Prepare data
-                data = []
+            def _create_relationships_tx(tx, rel_data):
+                statements = []
                 for rel in rel_data:
-                    data.append({
-                        'from_property': rel['from_property'],
-                        'from_value': rel['from_value'],
-                        'to_property': rel['to_property'],
-                        'to_value': rel['to_value'],
-                        'properties': rel.get('properties', {})
+                    from_label = rel['from_label']
+                    from_property = rel['from_property']
+                    from_value = rel['from_value']
+                    to_label = rel['to_label']
+                    to_property = rel['to_property']
+                    to_value = rel['to_value']
+                    props = rel['properties']
+                    
+                    # Fixed sanitized relationship type
+                    rel_type = 'RELATED_TO'
+
+                    query = f"""
+                    MATCH (a:{from_label}), (b:{to_label})
+                    WHERE a.{from_property} = $from_value AND b.{to_property} = $to_value
+                    CREATE (a)-[r:{rel_type} $props]->(b)
+                    RETURN r
+                    """
+                    result = tx.run(query, {
+                        "from_value": from_value,
+                        "to_value": to_value,
+                        "props": props
                     })
-                
-                result = tx.run(query, rels=data)
-                return [record.data() for record in result]
+                    statements.extend([record.data() for record in result])
+                return statements
+
             
-            batch_results = self.run_transaction(_create_relationships_tx, rels, rel_type)
+            batch_results = self.run_transaction(_create_relationships_tx, rels)
             results.extend(batch_results)
         
         return results

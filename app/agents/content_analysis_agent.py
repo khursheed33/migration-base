@@ -3,6 +3,7 @@ import uuid
 import ast
 from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime
+from openai import AsyncOpenAI
 
 # Try to import Tree-sitter, but provide fallback
 try:
@@ -36,8 +37,11 @@ class ContentAnalysisAgent(BaseAgent):
     def __init__(self, project_id: str):
         """Initialize the content analysis agent."""
         super().__init__(project_id)
-        # Initialize OpenAI client without proxies parameter
-        self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Initialize OpenAI client with correct configuration
+        self.openai_client = AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=settings.OPENAI_TIMEOUT
+        )
         self.parser = self._initialize_parser()
         self._processed_files: Set[str] = set()
         self._file_id_map: Dict[str, str] = {}  # Maps relative_path to file_id

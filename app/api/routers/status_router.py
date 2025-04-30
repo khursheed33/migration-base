@@ -61,7 +61,7 @@ async def get_project_status(project_id: str):
         # Get project steps (completed and remaining)
         steps_completed = []
         steps_remaining = []
-        current_step_details = {}
+        current_step_details = None
         
         # Define all possible steps with details
         all_steps = [
@@ -144,7 +144,11 @@ async def get_project_status(project_id: str):
             else:
                 steps_remaining.append(step)
                 if step["name"] == current_step:
-                    current_step_details = step
+                    current_step_details = {
+                        "name": step["name"],
+                        "description": step["description"],
+                        "estimated_duration": step["estimated_duration"]
+                    }
         
         # Get additional status details
         status_details = {

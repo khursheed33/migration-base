@@ -27,6 +27,14 @@ class RelationshipType(str, Enum):
     TARGETS = "TARGETS"
     PLANNED_IN = "PLANNED_IN"
     
+    # Migration-specific relationships
+    MIGRATES_TO = "MIGRATES_TO"
+    TRANSLATES_TO = "TRANSLATES_TO"
+    EQUIVALENT_TO = "EQUIVALENT_TO"
+    IMPLEMENTS_PATTERN = "IMPLEMENTS_PATTERN"
+    CONVERTS_TO = "CONVERTS_TO"
+    REPLACES = "REPLACES"
+    
     # Report and feedback relationships
     REPORTED_IN = "REPORTED_IN"
     FEEDBACK_FOR = "FEEDBACK_FOR"

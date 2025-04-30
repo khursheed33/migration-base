@@ -5,9 +5,11 @@ import shutil
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+import json
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
+from app.utils.openai_client import get_openai_client
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -55,16 +57,52 @@ class UploadAgent(BaseAgent):
             
             # Update project status
             self.update_project_status(
-                status="uploaded",
+                status="uploading",
                 progress=10.0,
-                current_step="Project uploaded and extracted"
+                current_step="Project extracted, analyzing structure"
+            )
+            
+            # Analyze project structure and create file nodes
+            structure_result = await self._analyze_project_structure(temp_dir)
+            if not structure_result["success"]:
+                return structure_result
+                
+            # Analyze file contents with OpenAI to generate descriptions
+            self.update_project_status(
+                status="analyzing",
+                progress=30.0,
+                current_step="Analyzing files and generating descriptions"
+            )
+            
+            content_result = await self._analyze_file_contents(temp_dir, structure_result["files"])
+            if not content_result["success"]:
+                return content_result
+                
+            # Create component mappings
+            self.update_project_status(
+                status="mapping",
+                progress=60.0,
+                current_step="Creating component mappings"
+            )
+            
+            mapping_result = await self._create_mappings(structure_result["files"], content_result["metadata"])
+            if not mapping_result["success"]:
+                return mapping_result
+            
+            # Update project status
+            self.update_project_status(
+                status="uploaded",
+                progress=100.0,
+                current_step="Project uploaded, analyzed and ready for migration"
             )
             
             return {
                 "success": True,
                 "project_id": self.project_id,
                 "temp_dir": temp_dir,
-                "project": project
+                "project": project,
+                "files_analyzed": structure_result["file_count"],
+                "components_mapped": mapping_result["mapping_count"]
             }
             
         except Exception as e:
@@ -162,7 +200,6 @@ class UploadAgent(BaseAgent):
         Returns:
             Created Project node
         """
-        import json
         now = datetime.utcnow().isoformat()
         
         # Create migrated directory
@@ -245,3 +282,578 @@ class UploadAgent(BaseAgent):
             "largest_file_size": largest_file_size,
             "file_types": file_types
         }
+    
+    async def _analyze_project_structure(self, directory: str) -> Dict[str, Any]:
+        """
+        Analyze project structure and create File nodes in Neo4j.
+        
+        Args:
+            directory: Path to the project directory
+            
+        Returns:
+            Dictionary containing analysis results
+        """
+        try:
+            self.logger.info(f"Analyzing project structure for {self.project_id}")
+            files = []
+            file_count = 0
+            
+            # Get project node
+            project_node = self.db.find_node("Project", "project_id", self.project_id)
+            if not project_node:
+                return {"success": False, "error": "Project node not found"}
+            
+            # Walk through directory
+            for root, dirs, filenames in os.walk(directory):
+                # Process files
+                for filename in filenames:
+                    # Skip hidden files and directories
+                    if filename.startswith('.') or "/." in root:
+                        continue
+                    
+                    file_path = os.path.join(root, filename)
+                    relative_path = os.path.relpath(file_path, directory)
+                    
+                    # Get file info
+                    file_size = os.path.getsize(file_path)
+                    file_ext = os.path.splitext(filename)[1].lower()
+                    
+                    # Determine file type
+                    file_type = self._detect_file_type(filename, file_ext)
+                    
+                    # Create file node
+                    file_id = str(uuid.uuid4())
+                    file_properties = {
+                        "id": file_id,
+                        "file_id": file_id,
+                        "project_id": self.project_id,
+                        "file_path": file_path,
+                        "relative_path": relative_path,
+                        "file_name": filename,
+                        "file_type": file_type,
+                        "extension": file_ext,
+                        "size": file_size,
+                        "created_at": datetime.utcnow().isoformat()
+                    }
+                    
+                    file_node = self.db.create_node("File", file_properties)
+                    
+                    # Create relationship to project
+                    self.db.create_relationship(
+                        "Project", "project_id", self.project_id,
+                        "CONTAINS",
+                        "File", "id", file_id
+                    )
+                    
+                    files.append({
+                        "id": file_id,
+                        "path": file_path,
+                        "relative_path": relative_path,
+                        "name": filename,
+                        "type": file_type,
+                        "extension": file_ext,
+                        "size": file_size
+                    })
+                    
+                    file_count += 1
+            
+            self.logger.info(f"Created {file_count} File nodes for project {self.project_id}")
+            
+            return {
+                "success": True,
+                "file_count": file_count,
+                "files": files
+            }
+            
+        except Exception as e:
+            error_message = f"Error analyzing project structure: {str(e)}"
+            self.log_error(error_message)
+            return {"success": False, "error": error_message}
+    
+    def _detect_file_type(self, filename: str, extension: str) -> str:
+        """
+        Detect file type based on filename and extension.
+        
+        Args:
+            filename: Name of the file
+            extension: File extension
+            
+        Returns:
+            Detected file type
+        """
+        # Map common extensions to file types
+        ext_map = {
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".jsx": "react",
+            ".tsx": "react",
+            ".html": "html",
+            ".css": "css",
+            ".scss": "sass",
+            ".java": "java",
+            ".c": "c",
+            ".cpp": "cpp",
+            ".h": "header",
+            ".cs": "csharp",
+            ".php": "php",
+            ".rb": "ruby",
+            ".go": "go",
+            ".rs": "rust",
+            ".kt": "kotlin",
+            ".swift": "swift",
+            ".m": "objective-c",
+            ".json": "json",
+            ".xml": "xml",
+            ".yml": "yaml",
+            ".yaml": "yaml",
+            ".md": "markdown",
+            ".sql": "sql",
+            ".sh": "shell",
+            ".bat": "batch",
+            ".ps1": "powershell",
+            ".gitignore": "git",
+            ".dockerignore": "docker",
+            ".env": "env",
+            ".txt": "text",
+            ".pdf": "pdf",
+            ".doc": "doc",
+            ".docx": "docx",
+            ".xls": "excel",
+            ".xlsx": "excel",
+            ".csv": "csv",
+            ".jpg": "image",
+            ".jpeg": "image",
+            ".png": "image",
+            ".gif": "image",
+            ".svg": "image",
+            ".ico": "image"
+        }
+        
+        # Handle special filenames
+        if filename == "Dockerfile":
+            return "docker"
+        elif filename == "package.json":
+            return "npm"
+        elif filename == "requirements.txt":
+            return "python-deps"
+        elif filename == "Cargo.toml":
+            return "rust-deps"
+        elif filename == "pom.xml":
+            return "maven"
+        
+        # Return file type based on extension
+        return ext_map.get(extension, "unknown")
+    
+    async def _analyze_file_contents(self, directory: str, files: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Analyze file contents and generate descriptions using OpenAI.
+        Detects functions, classes, imports, etc. and creates nodes in Neo4j.
+        
+        Args:
+            directory: Path to the project directory
+            files: List of file dictionaries
+            
+        Returns:
+            Dictionary containing analysis results
+        """
+        try:
+            self.logger.info(f"Analyzing file contents for project {self.project_id}")
+            
+            # Get OpenAI client
+            openai_client = get_openai_client()
+            if not openai_client:
+                self.logger.warning("OpenAI client not available, skipping content analysis")
+                return {"success": True, "metadata": {}, "analyzed_files": 0}
+            
+            analyzed_files = 0
+            metadata = {}
+            
+            # Process code files (skip binary and large files)
+            code_files = [
+                f for f in files 
+                if self._is_code_file(f["type"]) and f["size"] < settings.MAX_FILE_SIZE_ANALYSIS
+            ]
+            
+            # Group files by type for batch processing
+            file_groups = {}
+            for file in code_files:
+                file_type = file["type"]
+                if file_type not in file_groups:
+                    file_groups[file_type] = []
+                file_groups[file_type].append(file)
+            
+            # Analyze each file type group
+            for file_type, group_files in file_groups.items():
+                for file in group_files:
+                    # Read file content
+                    file_path = file["path"]
+                    try:
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                    except Exception as e:
+                        self.logger.warning(f"Error reading file {file_path}: {str(e)}")
+                        continue
+                    
+                    # Skip empty files
+                    if not content.strip():
+                        continue
+                    
+                    # Generate file description with OpenAI
+                    file_metadata = await self._generate_file_description(
+                        file["id"], 
+                        file["relative_path"], 
+                        file_type, 
+                        content
+                    )
+                    
+                    if file_metadata:
+                        metadata[file["id"]] = file_metadata
+                        analyzed_files += 1
+                    
+                    # Update progress periodically
+                    if analyzed_files % 10 == 0:
+                        progress = 30 + min(30, (analyzed_files / len(code_files)) * 30)
+                        self.update_project_status(
+                            progress=progress,
+                            current_step=f"Analyzed {analyzed_files}/{len(code_files)} files"
+                        )
+            
+            self.logger.info(f"Analyzed {analyzed_files} files for project {self.project_id}")
+            
+            return {
+                "success": True,
+                "metadata": metadata,
+                "analyzed_files": analyzed_files
+            }
+            
+        except Exception as e:
+            error_message = f"Error analyzing file contents: {str(e)}"
+            self.log_error(error_message)
+            return {"success": False, "error": error_message}
+    
+    def _is_code_file(self, file_type: str) -> bool:
+        """
+        Check if file is a code file that should be analyzed.
+        
+        Args:
+            file_type: File type
+            
+        Returns:
+            True if file is a code file, False otherwise
+        """
+        code_file_types = [
+            "python", "javascript", "typescript", "react", "java", "c", "cpp", 
+            "csharp", "php", "ruby", "go", "rust", "kotlin", "swift", "objective-c",
+            "html", "css", "sass", "shell", "sql"
+        ]
+        return file_type in code_file_types
+    
+    async def _generate_file_description(
+        self, 
+        file_id: str, 
+        file_path: str, 
+        file_type: str, 
+        content: str
+    ) -> Dict[str, Any]:
+        """
+        Generate file description using OpenAI.
+        
+        Args:
+            file_id: File ID
+            file_path: Relative file path
+            file_type: File type
+            content: File content
+            
+        Returns:
+            File metadata including description and detected components
+        """
+        try:
+            # Get OpenAI client
+            openai_client = get_openai_client()
+            if not openai_client:
+                return {}
+            
+            # Truncate content if too long
+            max_content_length = 8000  # Adjust based on token limits
+            if len(content) > max_content_length:
+                content = content[:max_content_length] + "\n... (truncated)"
+            
+            # Prepare prompt
+            prompt = f"""
+            Analyze this {file_type} file and provide:
+            1. A brief description (max 2 sentences) explaining what this file does
+            2. Key components (classes, functions, etc.) with their purpose
+            3. Any dependencies or imports
+            4. Potential migration challenges
+            
+            Format as JSON with fields: 
+            - description (string)
+            - components (array of objects with name, type, purpose)
+            - dependencies (array of strings)
+            - migration_notes (string)
+            
+            File: {file_path}
+            
+            Content:
+            ```{file_type}
+            {content}
+            ```
+            
+            Response (JSON only):
+            """
+            
+            # Call OpenAI
+            response = await openai_client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You analyze code files and extract metadata in JSON format."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2
+            )
+            
+            # Parse response
+            ai_response = response.choices[0].message.content
+            metadata = json.loads(ai_response)
+            
+            # Update file node with description
+            self.db.update_node_properties(
+                "File", 
+                "id", 
+                file_id, 
+                {
+                    "description": metadata.get("description", ""),
+                    "metadata": json.dumps(metadata)
+                }
+            )
+            
+            # Create component nodes for classes and functions
+            if "components" in metadata:
+                for component in metadata.get("components", []):
+                    # Skip if no name
+                    if not component.get("name"):
+                        continue
+                    
+                    component_id = str(uuid.uuid4())
+                    component_type = component.get("type", "unknown").lower()
+                    
+                    # Determine node label based on component type
+                    node_label = "Component"
+                    if "class" in component_type:
+                        node_label = "Class"
+                    elif "function" in component_type or "method" in component_type:
+                        node_label = "Function"
+                    elif "enum" in component_type:
+                        node_label = "Enum"
+                    
+                    # Create component node
+                    component_props = {
+                        "id": component_id,
+                        f"{node_label.lower()}_id": component_id,
+                        "project_id": self.project_id,
+                        "file_id": file_id,
+                        "name": component.get("name"),
+                        "type": component_type,
+                        "purpose": component.get("purpose", ""),
+                        "created_at": datetime.utcnow().isoformat()
+                    }
+                    
+                    node = self.db.create_node(node_label, component_props)
+                    
+                    # Create relationship from file to component
+                    relationship_type = f"HAS_{node_label.upper()}"
+                    self.db.create_relationship(
+                        "File", "id", file_id,
+                        relationship_type,
+                        node_label, "id", component_id
+                    )
+            
+            return metadata
+            
+        except Exception as e:
+            self.logger.warning(f"Error generating description for {file_path}: {str(e)}")
+            return {}
+            
+    async def _create_mappings(
+        self, 
+        files: List[Dict[str, Any]], 
+        metadata: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Create component mappings based on file analysis.
+        
+        Args:
+            files: List of file dictionaries
+            metadata: File metadata
+            
+        Returns:
+            Dictionary containing mapping results
+        """
+        try:
+            self.logger.info(f"Creating component mappings for project {self.project_id}")
+            
+            # Load custom mappings from project
+            project = self.db.find_node("Project", "project_id", self.project_id)
+            custom_mappings = {}
+            
+            if project and "custom_mappings" in project:
+                try:
+                    if isinstance(project["custom_mappings"], str):
+                        custom_mappings = json.loads(project["custom_mappings"])
+                    else:
+                        custom_mappings = project["custom_mappings"]
+                except:
+                    self.logger.warning("Failed to parse custom mappings")
+            
+            # Group files by type
+            file_types = {}
+            for file in files:
+                file_type = file["type"]
+                if file_type not in file_types:
+                    file_types[file_type] = []
+                file_types[file_type].append(file)
+            
+            # Get counts for each file type
+            file_type_counts = {ft: len(files_list) for ft, files_list in file_types.items()}
+            
+            # Create mapping nodes for each major component type
+            mapping_count = 0
+            
+            # Get source and target info from project
+            source_language = project.get("source_language", "unknown")
+            target_language = project.get("target_language", "unknown")
+            source_framework = project.get("source_framework", "unknown")
+            target_framework = project.get("target_framework", "unknown")
+            
+            # Create component classifications
+            for file_type, count in file_type_counts.items():
+                # Skip types with few files
+                if count < 2:
+                    continue
+                
+                # Create component node
+                component_id = str(uuid.uuid4())
+                component_props = {
+                    "id": component_id,
+                    "component_id": component_id,
+                    "project_id": self.project_id,
+                    "name": f"{file_type.capitalize()} Component",
+                    "type": file_type,
+                    "file_count": count,
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                
+                component_node = self.db.create_node("Component", component_props)
+                
+                # Link files to component
+                for file in file_types[file_type]:
+                    self.db.create_relationship(
+                        "Component", "id", component_id,
+                        "CLASSIFIES",
+                        "File", "id", file["id"]
+                    )
+                
+                # Create mapping if we have target language/framework
+                if target_language != "unknown":
+                    # Check if we have a custom mapping for this type
+                    target_component = None
+                    if custom_mappings and file_type in custom_mappings:
+                        target_component = custom_mappings[file_type]
+                    else:
+                        # Use default mapping based on file type and target language
+                        target_component = self._get_default_mapping(
+                            file_type, 
+                            source_language, 
+                            target_language,
+                            source_framework,
+                            target_framework
+                        )
+                    
+                    if target_component:
+                        # Create mapping node
+                        mapping_id = str(uuid.uuid4())
+                        mapping_props = {
+                            "id": mapping_id,
+                            "mapping_id": mapping_id,
+                            "project_id": self.project_id,
+                            "source_component": file_type,
+                            "target_component": target_component,
+                            "is_custom": file_type in custom_mappings,
+                            "created_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        mapping_node = self.db.create_node("Mapping", mapping_props)
+                        
+                        # Create relationships
+                        self.db.create_relationship(
+                            "Component", "id", component_id,
+                            "MAPS_TO",
+                            "Mapping", "id", mapping_id
+                        )
+                        
+                        mapping_count += 1
+            
+            self.logger.info(f"Created {mapping_count} mappings for project {self.project_id}")
+            
+            return {
+                "success": True,
+                "mapping_count": mapping_count
+            }
+            
+        except Exception as e:
+            error_message = f"Error creating mappings: {str(e)}"
+            self.log_error(error_message)
+            return {"success": False, "error": error_message}
+    
+    def _get_default_mapping(
+        self, 
+        source_type: str, 
+        source_language: str, 
+        target_language: str,
+        source_framework: str,
+        target_framework: str
+    ) -> Optional[str]:
+        """
+        Get default mapping for a source component type.
+        
+        Args:
+            source_type: Source component type
+            source_language: Source language
+            target_language: Target language
+            source_framework: Source framework
+            target_framework: Target framework
+            
+        Returns:
+            Target component type or None
+        """
+        # Common mappings between languages
+        mappings = {
+            # Python to Java mappings
+            ("python", "java"): {
+                "python": "java",
+                "flask": "spring-boot",
+                "django": "spring-mvc",
+                "sqlalchemy": "hibernate",
+                "pandas": "java-streams",
+                "numpy": "commons-math"
+            },
+            # JavaScript to TypeScript mappings
+            ("javascript", "typescript"): {
+                "javascript": "typescript",
+                "react": "react-typescript",
+                "vue": "vue-typescript",
+                "express": "nest",
+                "mongodb": "mongodb-typescript"
+            }
+            # Add more language mappings as needed
+        }
+        
+        # Check for specific language pair mappings
+        lang_pair = (source_language, target_language)
+        if lang_pair in mappings and source_type in mappings[lang_pair]:
+            return mappings[lang_pair][source_type]
+        
+        # Default: return same type but for target language
+        return f"{source_type}-{target_language}"

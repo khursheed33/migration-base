@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = Field(default="password", description="Neo4j password")
     
     # OpenAI settings
-    OPENAI_API_KEY: str = Field(default="your_openai_api_key_here", description="OpenAI API key")
-    OPENAI_MODEL: str = Field(default="gpt-4o", description="OpenAI model to use")
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"  # Default model
+    OPENAI_TIMEOUT: int = 60  # Timeout in seconds
     
     # Celery settings
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0", description="Celery broker URL")
@@ -38,9 +39,13 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = Field(default=None, description="AWS secret access key")
     AWS_REGION: Optional[str] = Field(default=None, description="AWS region")
     AWS_BUCKET_NAME: Optional[str] = Field(default=None, description="AWS S3 bucket name")
+    
+    # File analysis settings
+    MAX_FILE_SIZE_ANALYSIS: int = 500 * 1024  # 500KB max for content analysis
 
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
 

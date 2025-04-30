@@ -30,6 +30,8 @@ def process_upload(project_id: str, zip_file_path: str, project_data: Dict[str, 
         
         # Create and execute upload agent
         upload_agent = UploadAgent(project_id)
+        
+        # Execute upload agent with full analysis including OpenAI-based file descriptions
         upload_result = asyncio.run(upload_agent.execute(zip_file_path, project_data))
         
         # Clean up temporary ZIP file
@@ -43,16 +45,25 @@ def process_upload(project_id: str, zip_file_path: str, project_data: Dict[str, 
             logger.error(f"Upload processing failed: {upload_result.get('error', 'Unknown error')}")
             return upload_result
         
-        # Begin analysis immediately
-        logger.info(f"Upload successful, starting analysis for project {project_id}")
+        # The upload agent now handles:
+        # 1. Extracting files
+        # 2. Analyzing project structure (creating File nodes)
+        # 3. Analyzing file contents with OpenAI (generating descriptions, extracting components)
+        # 4. Creating mappings for components
+        # 5. Updating project status throughout the process
+        
+        # Begin deeper analysis if upload was successful
+        logger.info(f"Upload and initial analysis successful, starting detailed analysis for project {project_id}")
         analysis_result = analysis_task(project_id)
         
         return {
             "success": True, 
             "project_id": project_id,
-            "message": "Project uploaded and analysis started",
+            "message": "Project uploaded, analyzed and ready for migration",
             "upload_result": upload_result,
-            "analysis_started": True
+            "analysis_started": True,
+            "files_analyzed": upload_result.get("files_analyzed", 0),
+            "components_mapped": upload_result.get("components_mapped", 0)
         }
         
     except Exception as e:

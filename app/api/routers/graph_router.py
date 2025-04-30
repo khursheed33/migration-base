@@ -171,3 +171,196 @@ async def get_project_graph(
                 error_code="graph_retrieval_failed"
             ).dict()
         )
+
+@router.get(
+    "/{project_id}/nodes/{node_id}/expand",
+    response_model=GraphResponse,
+    responses={
+        200: {"model": GraphResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def expand_node(
+    project_id: str,
+    node_id: str,
+    depth: int = Query(1, description="Depth of expansion (default: 1)"),
+    direction: str = Query("both", description="Direction of relationships to traverse: 'incoming', 'outgoing', or 'both'"),
+    relationship_types: Optional[List[str]] = Query(None, description="Types of relationships to include"),
+    node_types: Optional[List[str]] = Query(None, description="Types of nodes to include"),
+):
+    """
+    Expand a node to see its connections up to a specified depth.
+    
+    Args:
+        project_id: Project ID
+        node_id: ID of the node to expand
+        depth: How many levels to expand from the node (default: 1)
+        direction: Direction of relationships to follow ('incoming', 'outgoing', or 'both')
+        relationship_types: Optional list of relationship types to include
+        node_types: Optional list of node types to include
+        
+    Returns:
+        Subgraph containing the requested node and its connections
+    """
+    try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+        
+        # Check if project exists
+        project = neo4j_manager.find_node("Project", "project_id", project_id)
+        if not project:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    status="error",
+                    message=f"Project {project_id} not found",
+                    error_code="project_not_found"
+                ).dict()
+            )
+        
+        # Build direction part of the query
+        direction_query = "r"  # Default for 'both'
+        if direction == "incoming":
+            direction_query = "<-[r]-"
+        elif direction == "outgoing":
+            direction_query = "-[r]->"
+        else:  # 'both'
+            direction_query = "-[r]-"
+        
+        # Build relationship filter
+        rel_filter = ""
+        if relationship_types and len(relationship_types) > 0:
+            rel_conditions = " OR ".join([f"type(r) = '{rel_type}'" for rel_type in relationship_types])
+            rel_filter = f" WHERE {rel_conditions}"
+        
+        # Build node type filter
+        node_filter = ""
+        if node_types and len(node_types) > 0:
+            node_conditions = " OR ".join([f"any(label IN labels(connected) WHERE label = '{node_type}')" for node_type in node_types])
+            node_filter = f" AND ({node_conditions})" if rel_filter else f" WHERE {node_conditions}"
+        
+        # Query to get the starting node and all connected nodes up to specified depth
+        query = f"""
+        MATCH (start)
+        WHERE start.id = $node_id AND start.project_id = $project_id
+        OPTIONAL MATCH path = (start){direction_query}(connected)
+        WHERE connected.project_id = $project_id{rel_filter}{node_filter}
+        WITH collect(path) AS paths
+        UNWIND paths AS p
+        RETURN nodes(p) AS nodes, relationships(p) AS rels
+        """
+        
+        # Execute query
+        result = neo4j_manager.run_query(query, {"node_id": node_id, "project_id": project_id})
+        
+        # Process results
+        all_nodes = {}
+        all_relationships = {}
+        
+        for record in result:
+            # Process nodes
+            for node in record.get("nodes", []):
+                if node is None:
+                    continue
+                
+                node_data = dict(node)
+                node_labels = list(node.labels)
+                node_type = node_labels[0] if node_labels else "Unknown"
+                
+                # Ensure node has an ID
+                if "id" not in node_data:
+                    node_data["id"] = f"{node_type.lower()}_{str(uuid.uuid4())}"
+                
+                # Handle special property types
+                if isinstance(node_data.get("custom_mappings"), str):
+                    try:
+                        node_data["custom_mappings"] = json.loads(node_data["custom_mappings"])
+                    except json.JSONDecodeError:
+                        node_data["custom_mappings"] = {}
+                
+                if isinstance(node_data.get("metadata"), str):
+                    try:
+                        node_data["metadata"] = json.loads(node_data["metadata"])
+                    except json.JSONDecodeError:
+                        node_data["metadata"] = {}
+                
+                # Add to collection if not already present
+                node_id_val = node_data["id"]
+                if node_id_val not in all_nodes:
+                    all_nodes[node_id_val] = GraphNode(
+                        node_id=node_id_val,
+                        node_type=node_type,
+                        properties=node_data
+                    )
+            
+            # Process relationships
+            for rel in record.get("rels", []):
+                if rel is None:
+                    continue
+                
+                # Get source and target node IDs
+                source_id = dict(rel.start_node).get("id")
+                target_id = dict(rel.end_node).get("id")
+                
+                if not source_id or not target_id:
+                    continue
+                
+                # Get relationship properties and type
+                rel_props = dict(rel)
+                rel_type = type(rel).__name__
+                rel_id = f"{source_id}_{rel_type}_{target_id}"
+                
+                # Handle special property types
+                if isinstance(rel_props.get("metadata"), str):
+                    try:
+                        rel_props["metadata"] = json.loads(rel_props["metadata"])
+                    except json.JSONDecodeError:
+                        rel_props["metadata"] = {}
+                
+                # Add to collection if not already present
+                if rel_id not in all_relationships:
+                    all_relationships[rel_id] = GraphRelationship(
+                        source_id=source_id,
+                        target_id=target_id,
+                        relationship_type=rel_type,
+                        properties=rel_props
+                    )
+        
+        # If node wasn't found, return 404
+        if not all_nodes:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    status="error",
+                    message=f"Node {node_id} not found in project {project_id}",
+                    error_code="node_not_found"
+                ).dict()
+            )
+        
+        # Return graph response
+        response_data = {
+            "project_id": project_id,
+            "nodes": [node.dict() for node in all_nodes.values()],
+            "relationships": [rel.dict() for rel in all_relationships.values()]
+        }
+        return GraphResponse(**response_data)
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                status="error",
+                message=f"Error expanding node: {str(e)}",
+                error_code="node_expansion_failed"
+            ).dict()
+        )

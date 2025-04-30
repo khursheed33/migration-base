@@ -218,3 +218,76 @@ async def get_project(project_id: str):
                 error_code="retrieval_failed"
             ).dict()
         )
+
+
+@router.post(
+    "/{project_id}/migrate",
+    response_model=SuccessResponse,
+    responses={
+        200: {"model": SuccessResponse},
+        404: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def start_migration(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Start or resume the migration process for a project.
+    
+    Args:
+        project_id: Project ID
+        
+    Returns:
+        Success response with migration status
+    """
+    try:
+        # Get Neo4j manager from dependency initializer
+        neo4j_manager = dependency_initializer.get_service("neo4j")
+        if neo4j_manager is None:
+            return JSONResponse(
+                status_code=500,
+                content=ErrorResponse(
+                    status="error",
+                    message="Database service not available",
+                    error_code="service_unavailable"
+                ).dict()
+            )
+            
+        # Retrieve project from database
+        project = neo4j_manager.find_node("Project", "project_id", project_id)
+        
+        if not project:
+            return JSONResponse(
+                status_code=404,
+                content=ErrorResponse(
+                    status="error",
+                    message=f"Project {project_id} not found",
+                    error_code="project_not_found"
+                ).dict()
+            )
+        
+        # Start migration in background
+        from app.agents.tasks import start_migration as start_migration_task
+        background_tasks.add_task(start_migration_task, project_id)
+        
+        return SuccessResponse(
+            status="success",
+            message="Migration started/resumed",
+            data={
+                "project_id": project_id,
+                "current_status": project.get("status", ""),
+                "current_step": project.get("current_step", "")
+            }
+        )
+        
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content=ErrorResponse(
+                status="error",
+                message=f"Error starting migration: {str(e)}",
+                error_code="migration_start_failed"
+            ).dict()
+        )

@@ -3,13 +3,16 @@ import uuid
 import zipfile
 import shutil
 import logging
+import json
+import tempfile
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-import json
+from pathlib import Path
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
 from app.utils.openai_client import get_openai_client
+from app.utils.constants import RelationshipType, NodeType
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -665,9 +668,9 @@ class UploadAgent(BaseAgent):
                     # Create relationship from file to component
                     relationship_type = f"HAS_{node_label.upper()}"
                     self.db.create_relationship(
-                        "File", "id", file_id,
-                        relationship_type,
-                        node_label, "id", component_id
+                        NodeType.FILE, "id", file_id,
+                        node_label, "id", component_id,
+                        relationship_type
                     )
             
             return metadata
@@ -750,9 +753,9 @@ class UploadAgent(BaseAgent):
                 # Link files to component
                 for file in file_types[file_type]:
                     self.db.create_relationship(
-                        "Component", "id", component_id,
-                        "CLASSIFIES",
-                        "File", "id", file["id"]
+                        NodeType.COMPONENT, "id", component_id,
+                        NodeType.FILE, "id", file["id"],
+                        RelationshipType.CLASSIFIES_AS
                     )
                 
                 # Create mapping if we have target language/framework
@@ -788,9 +791,9 @@ class UploadAgent(BaseAgent):
                         
                         # Create relationships
                         self.db.create_relationship(
-                            "Component", "id", component_id,
-                            "MAPS_TO",
-                            "Mapping", "id", mapping_id
+                            NodeType.COMPONENT, "id", component_id,
+                            NodeType.MAPPING, "id", mapping_id,
+                            RelationshipType.MAPS_TO
                         )
                         
                         mapping_count += 1

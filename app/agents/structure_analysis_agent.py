@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 from app.agents.base_agent import BaseAgent
 from app.databases import neo4j_manager
 from app.config.settings import get_settings
+from app.utils.constants import RelationshipType, NodeType
 
 settings = get_settings()
 
@@ -132,13 +133,13 @@ class StructureAnalysisAgent(BaseAgent):
             
             # Create relationship from Project to root folder
             self.db.create_relationship(
-                from_label="Project",
+                from_label=NodeType.PROJECT,
                 from_property="project_id",
                 from_value=self.project_id,
-                to_label="Folder",
+                to_label=NodeType.FOLDER,
                 to_property="folder_id",
                 to_value=root_folder_id,
-                relationship_type="CONTAINS"
+                relationship_type=RelationshipType.CONTAINS
             )
             
             # Prepare file and folder nodes
@@ -177,13 +178,13 @@ class StructureAnalysisAgent(BaseAgent):
                     parent_folder_id = folder_map.get(str(parent_path))
                     if parent_folder_id:
                         relationships.append({
-                            "from_label": "Folder",
+                            "from_label": NodeType.FOLDER,
                             "from_property": "folder_id",
                             "from_value": parent_folder_id,
-                            "to_label": "Folder",
+                            "to_label": NodeType.FOLDER,
                             "to_property": "folder_id",
                             "to_value": folder_id,
-                            "relationship_type": "CONTAINS",
+                            "relationship_type": RelationshipType.CONTAINS,
                             "properties": {}
                         })
                 
@@ -221,13 +222,13 @@ class StructureAnalysisAgent(BaseAgent):
                     folder_id = folder_map.get(str(current_path))
                     if folder_id:
                         relationships.append({
-                            "from_label": "Folder",
+                            "from_label": NodeType.FOLDER,
                             "from_property": "folder_id",
                             "from_value": folder_id,
-                            "to_label": "File",
+                            "to_label": NodeType.FILE,
                             "to_property": "file_id",
                             "to_value": file_id,
-                            "relationship_type": "CONTAINS",
+                            "relationship_type": RelationshipType.CONTAINS,
                             "properties": {}
                         })
             
@@ -254,13 +255,13 @@ class StructureAnalysisAgent(BaseAgent):
             project_file_relationships = []
             for file_props in file_properties_list:
                 project_file_relationships.append({
-                    "from_label": "Project",
+                    "from_label": NodeType.PROJECT,
                     "from_property": "project_id",
                     "from_value": self.project_id,
-                    "to_label": "File",
+                    "to_label": NodeType.FILE,
                     "to_property": "file_id",
                     "to_value": file_props["file_id"],
-                    "relationship_type": "CONTAINS_FILE",
+                    "relationship_type": RelationshipType.CONTAINS_FILE,
                     "properties": {}
                 })
             

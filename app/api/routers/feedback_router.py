@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.schemas import FeedbackCreate, FeedbackResponse, SuccessResponse, ErrorResponse
 from app.config.dependencies import dependency_initializer
+from app.utils.constants import RelationshipType, NodeType
 
 router = APIRouter()
 
@@ -78,13 +79,13 @@ async def create_feedback(
         
         # Create relationship to Project
         neo4j_manager.create_relationship(
-            from_label="Project",
+            from_label=NodeType.PROJECT,
             from_property="project_id",
             from_value=project_id,
-            to_label="Feedback",
+            to_label=NodeType.FEEDBACK,
             to_property="feedback_id",
             to_value=feedback_id,
-            relationship_type="FEEDBACK_FOR"
+            relationship_type=RelationshipType.FEEDBACK_FOR
         )
         
         # Update project's updated_at timestamp
@@ -165,7 +166,7 @@ async def get_project_feedback(project_id: str):
         
         # Get feedback
         query = """
-        MATCH (p:Project {project_id: $project_id})-[:FEEDBACK_FOR]->(f:Feedback)
+        MATCH (p:Project {project_id: $project_id})-[:""" + RelationshipType.FEEDBACK_FOR + """]->(f:Feedback)
         RETURN f
         ORDER BY f.created_at DESC
         """

@@ -23,6 +23,7 @@ from openai import OpenAI
 
 from app.agents.base_agent import BaseAgent
 from app.config.settings import get_settings
+from app.utils.constants import RelationshipType, NodeType
 
 settings = get_settings()
 
@@ -140,13 +141,13 @@ class ContentAnalysisAgent(BaseAgent):
                         target_file_id = self._file_id_map.get(import_meta.get("module_path"))
                         if target_file_id:
                             relationships_batch.append({
-                                "from_label": "File",
+                                "from_label": NodeType.FILE,
                                 "from_property": "file_id",
                                 "from_value": file_id,
-                                "to_label": "File",
+                                "to_label": NodeType.FILE,
                                 "to_property": "file_id",
                                 "to_value": target_file_id,
-                                "relationship_type": "IMPORTS",
+                                "relationship_type": RelationshipType.IMPORTS,
                                 "properties": {
                                     "created_at": datetime.utcnow().isoformat()
                                 }
@@ -158,13 +159,13 @@ class ContentAnalysisAgent(BaseAgent):
                         target_file_id = self._file_id_map.get(ref_meta.get("target_path"))
                         if target_file_id:
                             relationships_batch.append({
-                                "from_label": "File",
+                                "from_label": NodeType.FILE,
                                 "from_property": "file_id",
                                 "from_value": file_id,
-                                "to_label": "File",
+                                "to_label": NodeType.FILE,
                                 "to_property": "file_id",
                                 "to_value": target_file_id,
-                                "relationship_type": "REFERENCES",
+                                "relationship_type": RelationshipType.REFERENCES,
                                 "properties": {
                                     "reference_type": ref_meta.get("type", "unknown"),
                                     "created_at": datetime.utcnow().isoformat()
@@ -194,13 +195,13 @@ class ContentAnalysisAgent(BaseAgent):
                         file_id = function.get("file_id")
                         function_id = function.get("function_id")
                         function_relationships.append({
-                            "from_label": "File",
+                            "from_label": NodeType.FILE,
                             "from_property": "file_id",
                             "from_value": file_id,
-                            "to_label": "Function",
+                            "to_label": NodeType.FUNCTION,
                             "to_property": "function_id",
                             "to_value": function_id,
-                            "relationship_type": "HAS_FUNCTION",
+                            "relationship_type": RelationshipType.HAS_FUNCTION,
                             "properties": {
                                 "created_at": datetime.utcnow().isoformat()
                             }
@@ -219,13 +220,13 @@ class ContentAnalysisAgent(BaseAgent):
                         file_id = class_meta.get("file_id")
                         class_id = class_meta.get("class_id")
                         class_relationships.append({
-                            "from_label": "File",
+                            "from_label": NodeType.FILE,
                             "from_property": "file_id",
                             "from_value": file_id,
-                            "to_label": "Class",
+                            "to_label": NodeType.CLASS,
                             "to_property": "class_id",
                             "to_value": class_id,
-                            "relationship_type": "HAS_CLASS",
+                            "relationship_type": RelationshipType.HAS_CLASS,
                             "properties": {
                                 "created_at": datetime.utcnow().isoformat()
                             }
@@ -244,13 +245,13 @@ class ContentAnalysisAgent(BaseAgent):
                         file_id = enum.get("file_id")
                         enum_id = enum.get("enum_id")
                         enum_relationships.append({
-                            "from_label": "File",
+                            "from_label": NodeType.FILE,
                             "from_property": "file_id",
                             "from_value": file_id,
-                            "to_label": "Enum",
+                            "to_label": NodeType.ENUM,
                             "to_property": "enum_id",
                             "to_value": enum_id,
-                            "relationship_type": "HAS_ENUM",
+                            "relationship_type": RelationshipType.HAS_ENUM,
                             "properties": {
                                 "created_at": datetime.utcnow().isoformat()
                             }
@@ -269,13 +270,13 @@ class ContentAnalysisAgent(BaseAgent):
                         file_id = extension.get("file_id")
                         extension_id = extension.get("extension_id")
                         extension_relationships.append({
-                            "from_label": "File",
+                            "from_label": NodeType.FILE,
                             "from_property": "file_id",
                             "from_value": file_id,
-                            "to_label": "Extension",
+                            "to_label": NodeType.EXTENSION,
                             "to_property": "extension_id",
                             "to_value": extension_id,
-                            "relationship_type": "HAS_EXTENSION",
+                            "relationship_type": RelationshipType.HAS_EXTENSION,
                             "properties": {
                                 "created_at": datetime.utcnow().isoformat()
                             }

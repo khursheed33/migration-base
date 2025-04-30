@@ -6,6 +6,7 @@ import json
 
 from app.schemas import GraphResponse, ErrorResponse, GraphNode, GraphRelationship
 from app.config.dependencies import dependency_initializer
+from app.utils.constants import RelationshipType
 
 router = APIRouter()
 
@@ -22,7 +23,7 @@ router = APIRouter()
 async def get_project_graph(
     project_id: str,
     node_types: Optional[List[str]] = Query(None, description="Types of nodes to include (e.g., File, Function)"),
-    relationship_types: Optional[List[str]] = Query(None, description="Types of relationships to include (e.g., CONTAINS, IMPORTS)"),
+    relationship_types: Optional[List[str]] = Query(None, description=f"Types of relationships to include (e.g., {RelationshipType.CONTAINS}, {RelationshipType.IMPORTS})"),
 ):
     """
     Get the Neo4j graph data for a project, including nodes and relationships.
@@ -31,7 +32,7 @@ async def get_project_graph(
     Args:
         project_id: Project ID
         node_types: Optional list of node types to include (e.g., File, Function)
-        relationship_types: Optional list of relationship types to include (e.g., CONTAINS, IMPORTS)
+        relationship_types: Optional list of relationship types to include (e.g., {RelationshipType.CONTAINS}, {RelationshipType.IMPORTS})
         
     Returns:
         Project graph data

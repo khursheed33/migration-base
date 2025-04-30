@@ -7,6 +7,7 @@ from app.agents.base_agent import BaseAgent
 from app.agents.structure_analysis_agent import StructureAnalysisAgent
 from app.agents.content_analysis_agent import ContentAnalysisAgent
 from app.config.settings import get_settings
+from app.utils.constants import RelationshipType, NodeType
 
 settings = get_settings()
 
@@ -181,13 +182,13 @@ class AnalysisAgent(BaseAgent):
             
             # Prepare relationship from File to Component
             component_relationships.append({
-                "from_label": "File",
+                "from_label": NodeType.FILE,
                 "from_property": "file_id",
                 "from_value": file_id,
-                "to_label": "Component",
+                "to_label": NodeType.COMPONENT,
                 "to_property": "component_id",
                 "to_value": component_id,
-                "relationship_type": "CLASSIFIES_AS",
+                "relationship_type": RelationshipType.CLASSIFIES_AS,
                 "properties": {}
             })
         

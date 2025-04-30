@@ -5,6 +5,7 @@ import json
 
 from app.schemas import MetadataResponse, ErrorResponse
 from app.config.dependencies import dependency_initializer
+from app.utils.constants import RelationshipType, NodeType
 
 router = APIRouter()
 
@@ -73,16 +74,16 @@ async def get_project_metadata(project_id: str):
             )
         
         # Get file metadata with processing information
-        files_query = """
-        MATCH (p:Project {project_id: $project_id})-[:CONTAINS]->(f:File)
+        files_query = f"""
+        MATCH (p:{NodeType.PROJECT} {{project_id: $project_id}})-[:{RelationshipType.CONTAINS}]->(f:{NodeType.FILE})
         RETURN f,
-               size((f)<-[:CONTAINS]-(p)) as total_files,
-               size((f)-[:HAS_FUNCTION]->()) as function_count,
-               size((f)-[:HAS_CLASS]->()) as class_count,
-               size((f)-[:HAS_ENUM]->()) as enum_count,
-               size((f)-[:HAS_EXTENSION]->()) as extension_count,
-               size((f)-[:IMPORTS]->()) as import_count,
-               size((f)-[:REFERENCES]->()) as reference_count
+               size((f)<-[:{RelationshipType.CONTAINS}]-(p)) as total_files,
+               size((f)-[:{RelationshipType.HAS_FUNCTION}]->()) as function_count,
+               size((f)-[:{RelationshipType.HAS_CLASS}]->()) as class_count,
+               size((f)-[:{RelationshipType.HAS_ENUM}]->()) as enum_count,
+               size((f)-[:{RelationshipType.HAS_EXTENSION}]->()) as extension_count,
+               size((f)-[:{RelationshipType.IMPORTS}]->()) as import_count,
+               size((f)-[:{RelationshipType.REFERENCES}]->()) as reference_count
         """
         files_result = neo4j_manager.run_query(files_query, {"project_id": project_id})
         # Process and serialize file metadata
@@ -102,8 +103,8 @@ async def get_project_metadata(project_id: str):
             files.append(file_data)
         
         # Get function metadata with relationship information
-        functions_query = """
-        MATCH (f:File {project_id: $project_id})-[:HAS_FUNCTION]->(fn:Function)
+        functions_query = f"""
+        MATCH (f:{NodeType.FILE} {{project_id: $project_id}})-[:{RelationshipType.HAS_FUNCTION}]->(fn:{NodeType.FUNCTION})
         OPTIONAL MATCH (fn)-[r]->(other)
         RETURN fn, collect(distinct type(r)) as relationships, collect(distinct labels(other)[0]) as related_types
         """
@@ -127,9 +128,9 @@ async def get_project_metadata(project_id: str):
             functions.append(function_data)
         
         # Get class metadata with inheritance information
-        classes_query = """
-        MATCH (f:File {project_id: $project_id})-[:HAS_CLASS]->(c:Class)
-        OPTIONAL MATCH (c)-[r]->(other:Class)
+        classes_query = f"""
+        MATCH (f:{NodeType.FILE} {{project_id: $project_id}})-[:{RelationshipType.HAS_CLASS}]->(c:{NodeType.CLASS})
+        OPTIONAL MATCH (c)-[r]->(other:{NodeType.CLASS})
         RETURN c, collect(distinct type(r)) as inheritance_types, collect(distinct other.name) as related_classes
         """
         classes_result = neo4j_manager.run_query(classes_query, {"project_id": project_id})
@@ -152,8 +153,8 @@ async def get_project_metadata(project_id: str):
             classes.append(class_data)
         
         # Get enum metadata
-        enums_query = """
-        MATCH (f:File {project_id: $project_id})-[:HAS_ENUM]->(e:Enum)
+        enums_query = f"""
+        MATCH (f:{NodeType.FILE} {{project_id: $project_id}})-[:{RelationshipType.HAS_ENUM}]->(e:{NodeType.ENUM})
         RETURN e
         """
         enums_result = neo4j_manager.run_query(enums_query, {"project_id": project_id})
@@ -170,8 +171,8 @@ async def get_project_metadata(project_id: str):
             enums.append(enum_data)
         
         # Get extension metadata
-        extensions_query = """
-        MATCH (f:File {project_id: $project_id})-[:HAS_EXTENSION]->(e:Extension)
+        extensions_query = f"""
+        MATCH (f:{NodeType.FILE} {{project_id: $project_id}})-[:{RelationshipType.HAS_EXTENSION}]->(e:{NodeType.EXTENSION})
         RETURN e
         """
         extensions_result = neo4j_manager.run_query(extensions_query, {"project_id": project_id})
@@ -188,8 +189,8 @@ async def get_project_metadata(project_id: str):
             extensions.append(extension_data)
         
         # Get relationship metadata with file paths
-        relationships_query = """
-        MATCH (f1:File {project_id: $project_id})-[r:IMPORTS|REFERENCES]->(f2:File)
+        relationships_query = f"""
+        MATCH (f1:{NodeType.FILE} {{project_id: $project_id}})-[r:{RelationshipType.IMPORTS}|{RelationshipType.REFERENCES}]->(f2:{NodeType.FILE})
         RETURN f1.relative_path AS source,
                f2.relative_path AS target,
                type(r) AS relationship_type,

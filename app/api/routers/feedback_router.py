@@ -58,7 +58,7 @@ async def create_feedback(
             )
         
         # Create feedback
-        feedback_id = f"feedback_{uuid.uuid4().hex[:8]}"
+        feedback_id = f"feedback_{str(uuid.uuid4())}"
         now = datetime.utcnow().isoformat()
         
         feedback_properties = {
@@ -69,7 +69,8 @@ async def create_feedback(
             "component": feedback.component,
             "resolution": None,
             "created_at": now,
-            "updated_at": now
+            "updated_at": now,
+            "status": "pending"  # Add status field
         }
         
         # Create Feedback node
@@ -86,11 +87,25 @@ async def create_feedback(
             relationship_type="FEEDBACK_FOR"
         )
         
-        # Return success response
+        # Update project's updated_at timestamp
+        neo4j_manager.update_node(
+            label="Project",
+            property_name="project_id",
+            property_value=project_id,
+            updates={"updated_at": now}
+        )
+        
+        # Return success response with more detailed information
         return SuccessResponse(
             status="success",
-            message="Feedback created successfully",
-            data=FeedbackResponse(**feedback_properties)
+            message="Feedback submitted successfully",
+            data={
+                "feedback": FeedbackResponse(**feedback_properties),
+                "project_status": {
+                    "project_id": project_id,
+                    "last_updated": now
+                }
+            }
         )
         
     except Exception as e:
@@ -173,4 +188,4 @@ async def get_project_feedback(project_id: str):
                 message=f"Error retrieving feedback: {str(e)}",
                 error_code="feedback_retrieval_failed"
             ).dict()
-        ) 
+        )

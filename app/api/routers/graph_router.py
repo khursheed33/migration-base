@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from typing import List, Optional
+import uuid
+import json
 
-from app.schemas import GraphResponse, ErrorResponse
+from app.schemas import GraphResponse, ErrorResponse, GraphNode, GraphRelationship
 from app.config.dependencies import dependency_initializer
 
 router = APIRouter()
@@ -95,12 +97,34 @@ async def get_project_graph(
             node = record["n"]
             node_labels = record["node_labels"]
             
-            # Add node_type field
+            # Add node_type field and ensure node_id exists
             node_type = node_labels[0] if node_labels else "Unknown"
             node_data = dict(node)
-            node_data["node_type"] = node_type
             
-            nodes.append(node_data)
+            # Ensure node has an ID
+            if "id" not in node_data:
+                node_data["id"] = f"{node_type.lower()}_{str(uuid.uuid4())}"
+            
+            # Handle special property types
+            if isinstance(node_data.get("custom_mappings"), str):
+                try:
+                    node_data["custom_mappings"] = json.loads(node_data["custom_mappings"])
+                except json.JSONDecodeError:
+                    node_data["custom_mappings"] = {}
+            
+            if isinstance(node_data.get("metadata"), str):
+                try:
+                    node_data["metadata"] = json.loads(node_data["metadata"])
+                except json.JSONDecodeError:
+                    node_data["metadata"] = {}
+            
+            # Create GraphNode instance
+            graph_node = GraphNode(
+                node_id=node_data["id"],
+                node_type=node_type,
+                properties=node_data
+            )
+            nodes.append(graph_node)
         
         # Process relationships
         relationships = []
@@ -109,22 +133,34 @@ async def get_project_graph(
             target = record["n2"]
             relationship = record["r"]
             
-            # Create relationship data
-            rel_data = {
-                "source_id": source.get("file_id") or source.get("project_id") or source.get("function_id") or source.get("class_id"),
-                "target_id": target.get("file_id") or target.get("project_id") or target.get("function_id") or target.get("class_id"),
-                "relationship_type": type(relationship).__name__,
-                "properties": dict(relationship)
-            }
+            # Ensure source and target IDs exist
+            source_id = source.get("id") or source.get("project_id") or source.get("file_id") or source.get("function_id") or source.get("class_id") or str(uuid.uuid4())
+            target_id = target.get("id") or target.get("project_id") or target.get("file_id") or target.get("function_id") or target.get("class_id") or str(uuid.uuid4())
             
+            # Get relationship properties and handle special types
+            rel_props = dict(relationship)
+            if isinstance(rel_props.get("metadata"), str):
+                try:
+                    rel_props["metadata"] = json.loads(rel_props["metadata"])
+                except json.JSONDecodeError:
+                    rel_props["metadata"] = {}
+            
+            # Create GraphRelationship instance
+            rel_data = GraphRelationship(
+                source_id=source_id,
+                target_id=target_id,
+                relationship_type=type(relationship).__name__,
+                properties=rel_props
+            )
             relationships.append(rel_data)
         
-        # Return graph response
-        return GraphResponse(
-            project_id=project_id,
-            nodes=nodes,
-            relationships=relationships
-        )
+        # Return graph response with proper data types
+        response_data = {
+            "project_id": project_id,
+            "nodes": [node.dict() for node in nodes],
+            "relationships": [rel.dict() for rel in relationships]
+        }
+        return GraphResponse(**response_data)
         
     except Exception as e:
         return JSONResponse(
@@ -134,4 +170,4 @@ async def get_project_graph(
                 message=f"Error retrieving project graph: {str(e)}",
                 error_code="graph_retrieval_failed"
             ).dict()
-        ) 
+        )

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, B
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 import json
+from datetime import datetime
 
 from app.config.settings import get_settings
 from app.config.dependencies import dependency_initializer
@@ -86,7 +87,7 @@ async def upload_project(
     
     try:
         # Create project data
-        project_id = f"proj_{uuid.uuid4().hex[:8]}"
+        project_id = str(uuid.uuid4())
         project_data = {
             "user_id": user_id,
             "description": description,
@@ -95,6 +96,11 @@ async def upload_project(
             "source_framework": source_framework,
             "target_framework": target_framework,
             "custom_mappings": mappings_dict,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "status": "uploaded",
+            "progress": 0,
+            "current_step": "Project upload"
         }
         
         # Save file to temporary location
@@ -180,7 +186,28 @@ async def get_project(project_id: str):
             )
         
         # Convert Neo4j node to ProjectResponse
-        return ProjectResponse(**project)
+        try:
+            # Extract custom_mappings as a dictionary
+            if isinstance(project.get('custom_mappings'), str):
+                try:
+                    project['custom_mappings'] = json.loads(project['custom_mappings'])
+                except json.JSONDecodeError:
+                    project['custom_mappings'] = {}
+            elif project.get('custom_mappings') is None:
+                project['custom_mappings'] = {}
+
+            return ProjectResponse(**project)
+            
+        except ValidationError as e:
+            return JSONResponse(
+                status_code=400,
+                content=ErrorResponse(
+                    status="error",
+                    message=f"Invalid project data: {str(e)}",
+                    error_code="validation_failed",
+                    details={"validation_errors": e.errors()}
+                ).dict()
+            )
         
     except Exception as e:
         return JSONResponse(
@@ -190,4 +217,4 @@ async def get_project(project_id: str):
                 message=f"Error retrieving project: {str(e)}",
                 error_code="retrieval_failed"
             ).dict()
-        ) 
+        )

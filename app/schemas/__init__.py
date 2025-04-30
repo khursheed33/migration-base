@@ -8,8 +8,16 @@ from app.schemas.base import (
     StatusResponse,
     MetadataResponse,
     GraphResponse,
+    GraphNode,
+    GraphRelationship,
     FeedbackCreate,
     FeedbackResponse,
+    StepDetails,
+    PerformanceMetrics,
+    StatusDetails,
+    FileMetadata,
+    RelationshipMetadata,
+    ProjectSummary
 )
 
 __all__ = [
@@ -22,6 +30,14 @@ __all__ = [
     "StatusResponse",
     "MetadataResponse",
     "GraphResponse",
+    "GraphNode",
+    "GraphRelationship",
     "FeedbackCreate",
     "FeedbackResponse",
-] 
+    "StepDetails",
+    "PerformanceMetrics",
+    "StatusDetails",
+    "FileMetadata",
+    "RelationshipMetadata",
+    "ProjectSummary"
+]

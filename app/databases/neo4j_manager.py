@@ -143,5 +143,166 @@ class Neo4jManager:
         
         # Ensure proper serialization of node data
         return _serialize_node(result[0]['n'])
+        
+    def create_node(
+        self, 
+        label: str, 
+        properties: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create a node with the given label and properties.
+        
+        Args:
+            label: Node label
+            properties: Node properties
+            
+        Returns:
+            Dictionary representing the created node
+        """
+        query = f"""
+        CREATE (n:{label} $properties)
+        RETURN n
+        """
+        result = self.run_query(query, {"properties": properties})
+        return _serialize_node(result[0]['n']) if result else {}
+        
+    def create_relationship(
+        self, 
+        from_label: str, 
+        from_property: str, 
+        from_value: Any,
+        to_label: str, 
+        to_property: str, 
+        to_value: Any,
+        relationship_type: str, 
+        properties: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a relationship between two nodes.
+        
+        Args:
+            from_label: Label of the source node
+            from_property: Property name to identify the source node
+            from_value: Property value to identify the source node
+            to_label: Label of the target node
+            to_property: Property name to identify the target node
+            to_value: Property value to identify the target node
+            relationship_type: Type of relationship
+            properties: Relationship properties (optional)
+            
+        Returns:
+            Dictionary representing the created relationship
+        """
+        query = f"""
+        MATCH (a:{from_label}), (b:{to_label})
+        WHERE a.{from_property} = $from_value AND b.{to_property} = $to_value
+        CREATE (a)-[r:{relationship_type} $properties]->(b)
+        RETURN r
+        """
+        result = self.run_query(
+            query, 
+            {
+                "from_value": from_value,
+                "to_value": to_value,
+                "properties": properties or {}
+            }
+        )
+        return result[0]['r'] if result else {}
+    
+    def create_nodes_batch(
+        self,
+        label: str,
+        properties_list: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Create multiple nodes with the same label in a single transaction.
+        
+        Args:
+            label: Node label
+            properties_list: List of property dictionaries for each node
+            
+        Returns:
+            List of dictionaries representing the created nodes
+        """
+        if not properties_list:
+            return []
+            
+        def _create_nodes_tx(tx, props_list):
+            query = f"""
+            UNWIND $props_list AS props
+            CREATE (n:{label} props)
+            RETURN n
+            """
+            result = tx.run(query, props_list=props_list)
+            return [_serialize_node(record["n"]) for record in result]
+        
+        return self.run_transaction(_create_nodes_tx, properties_list)
+        
+    def create_relationships_batch(
+        self,
+        relationships: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Create multiple relationships in a single transaction.
+        
+        Args:
+            relationships: List of dictionaries containing relationship info:
+                {
+                    'from_label': str,
+                    'from_property': str,
+                    'from_value': Any,
+                    'to_label': str,
+                    'to_property': str,
+                    'to_value': Any,
+                    'relationship_type': str,
+                    'properties': Optional[Dict[str, Any]]
+                }
+                
+        Returns:
+            List of dictionaries representing the created relationships
+        """
+        if not relationships:
+            return []
+            
+        results = []
+        # Process in batches of similar relationship types
+        relationship_types = {}
+        
+        for rel in relationships:
+            rel_type = rel['relationship_type']
+            if rel_type not in relationship_types:
+                relationship_types[rel_type] = []
+            relationship_types[rel_type].append(rel)
+        
+        for rel_type, rels in relationship_types.items():
+            def _create_relationships_tx(tx, rel_data, rel_type):
+                query = f"""
+                UNWIND $rels AS rel
+                MATCH (a:{{}}) WHERE a[rel.from_property] = rel.from_value
+                MATCH (b:{{}}) WHERE b[rel.to_property] = rel.to_value
+                CREATE (a)-[r:{rel_type} rel.properties]->(b)
+                RETURN r
+                """
+                # Substitute the labels dynamically
+                query = query.format(rel_data[0]['from_label'], rel_data[0]['to_label'])
+                
+                # Prepare data
+                data = []
+                for rel in rel_data:
+                    data.append({
+                        'from_property': rel['from_property'],
+                        'from_value': rel['from_value'],
+                        'to_property': rel['to_property'],
+                        'to_value': rel['to_value'],
+                        'properties': rel.get('properties', {})
+                    })
+                
+                result = tx.run(query, rels=data)
+                return [record.data() for record in result]
+            
+            batch_results = self.run_transaction(_create_relationships_tx, rels, rel_type)
+            results.extend(batch_results)
+        
+        return results
 
 neo4j_manager = Neo4jManager()

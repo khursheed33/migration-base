@@ -4,7 +4,21 @@ import ast
 from typing import Any, Dict, List, Optional, Set, Tuple
 from datetime import datetime
 
-from tree_sitter import Language, Parser
+# Try to import Tree-sitter, but provide fallback
+try:
+    from tree_sitter import Language, Parser
+    TREE_SITTER_AVAILABLE = True
+except ImportError:
+    TREE_SITTER_AVAILABLE = False
+    # Create mock classes
+    class Parser:
+        def parse(self, *args, **kwargs):
+            return None
+    
+    class Language:
+        def __init__(self, *args, **kwargs):
+            pass
+
 from openai import OpenAI
 
 from app.agents.base_agent import BaseAgent
@@ -29,9 +43,23 @@ class ContentAnalysisAgent(BaseAgent):
     
     def _initialize_parser(self) -> Parser:
         """Initialize tree-sitter parser with supported languages."""
-        # TODO: Build and load language parsers
         parser = Parser()
-        # parser.set_language(Language('build/languages.so', 'python'))
+        
+        if TREE_SITTER_AVAILABLE:
+            try:
+                # Check if language file exists
+                languages_path = os.path.join(settings.STORAGE_DIR, 'build', 'languages.so')
+                if os.path.exists(languages_path):
+                    python_language = Language(languages_path, 'python')
+                    parser.set_language(python_language)
+                    self.logger.info("Tree-sitter parser initialized with Python language")
+                else:
+                    self.logger.warning("Tree-sitter language file not found, using AST parser only")
+            except Exception as e:
+                self.logger.error(f"Error initializing tree-sitter: {str(e)}")
+        else:
+            self.logger.warning("Tree-sitter not available, using AST parser only")
+        
         return parser
     
     async def execute(self, file_nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -467,8 +495,28 @@ class ContentAnalysisAgent(BaseAgent):
             Extracted metadata
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            # Check if file size is too large
+            file_size = os.path.getsize(file_path)
+            max_size_mb = 0.1  # 100KB limit for analysis
+            if file_size > max_size_mb * 1024 * 1024:
+                self.logger.warning(f"File {file_path} is too large ({file_size} bytes) for OpenAI analysis, skipping")
+                return {
+                    "file_id": file_id,
+                    "functions": [],
+                    "classes": [],
+                    "enums": [],
+                    "extensions": [],
+                    "imports": [],
+                    "references": []
+                }
+            
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
+            
+            # Check if content is too large for OpenAI
+            if len(content) > 25000:  # Conservative limit for token count
+                content = content[:25000] + "\n... (content truncated for analysis)"
             
             # Prepare prompt for OpenAI
             prompt = f"""Analyze this {file_type} code and extract the following metadata in JSON format:
@@ -477,15 +525,33 @@ class ContentAnalysisAgent(BaseAgent):
             - Imports and dependencies
             - Any special constructs (enums, extensions, etc.)
 
+            Respond with valid JSON only.
+
             Code:
             {content}"""
             
-            # Call OpenAI API
-            response = self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
+            # Prepare response format based on OpenAI model capabilities
+            try:
+                # Try with response_format
+                response = self.openai_client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.0,
+                    max_tokens=4000
+                )
+            except Exception as format_error:
+                self.logger.warning(f"OpenAI JSON response format not supported: {str(format_error)}, using standard response")
+                # Fallback without specifying response format for older models
+                response = self.openai_client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are a code analyzer. Always respond with valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.0,
+                    max_tokens=4000
+                )
             
             # Parse response and structure metadata
             metadata = {
@@ -502,7 +568,15 @@ class ContentAnalysisAgent(BaseAgent):
             response_content = response.choices[0].message.content
             try:
                 import json
-                parsed_data = json.loads(response_content)
+                # Try to find and extract JSON if it's wrapped in markdown code blocks or other text
+                json_start = response_content.find('{')
+                json_end = response_content.rfind('}') + 1
+                
+                if json_start >= 0 and json_end > json_start:
+                    json_content = response_content[json_start:json_end]
+                    parsed_data = json.loads(json_content)
+                else:
+                    parsed_data = json.loads(response_content)
                 
                 # Process functions
                 for func in parsed_data.get("functions", []):
@@ -567,6 +641,7 @@ class ContentAnalysisAgent(BaseAgent):
             
             except Exception as parse_error:
                 self.logger.error(f"Error parsing OpenAI response for {file_path}: {str(parse_error)}")
+                self.logger.debug(f"Response content: {response_content[:200]}...")
             
             return metadata
             
